@@ -19,5 +19,7 @@ namespace Umbraco.Community.AzureSSO.Settings
 		public bool DenyLocalLogin => _configuration.DenyLocalLogin ?? false;
 		public TokenCacheType TokenCacheType => _configuration.TokenCacheType;
 		public bool AutoRedirectLoginToExternalProvider => _configuration.AutoRedirectLoginToExternalProvider ?? false;
+		public bool SyncUserAvatar => _configuration.SyncUserAvatar ?? false;
+		public string MicrosoftGraphEndpoint => _configuration.MicrosoftGraphEndpoint ?? "https://graph.microsoft.com";
 	}
 }

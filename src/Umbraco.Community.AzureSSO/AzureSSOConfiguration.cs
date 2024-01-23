@@ -29,5 +29,9 @@ namespace Umbraco.Community.AzureSSO
 		public TokenCacheType TokenCacheType { get; set; } = TokenCacheType.InMemory;
 	
     public bool? AutoRedirectLoginToExternalProvider { get; set; }
-  }
+
+		public bool? SyncUserAvatar { get; set; }
+
+		public string MicrosoftGraphEndpoint { get; set; }
+	}
 }

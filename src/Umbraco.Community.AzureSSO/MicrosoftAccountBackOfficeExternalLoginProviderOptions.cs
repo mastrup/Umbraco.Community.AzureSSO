@@ -1,11 +1,19 @@
+using System.IO;
 using System.Linq;
+using System.Net.Http.Headers;
+using System.Net.Http;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core;
+using Umbraco.Cms.Core.IO;
+using Umbraco.Cms.Core.Models.Membership;
 using Umbraco.Cms.Core.Security;
+using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Web.BackOffice.Security;
 using Umbraco.Community.AzureSSO.Settings;
+using Umbraco.Extensions;
+using System.Security.Cryptography;
 
 namespace Umbraco.Community.AzureSSO
 {
@@ -14,10 +22,14 @@ namespace Umbraco.Community.AzureSSO
 		public const string SchemeName = "MicrosoftAccount";
 
 		private readonly AzureSsoSettings _settings;
+		private readonly IUserService _userService;
+		private readonly MediaFileManager _mediaFileManager;
 
-		public MicrosoftAccountBackOfficeExternalLoginProviderOptions(AzureSsoSettings settings)
+		public MicrosoftAccountBackOfficeExternalLoginProviderOptions(AzureSsoSettings settings, IUserService userService, MediaFileManager mediaFileManager)
 		{
 			_settings = settings;
+			_userService = userService;
+			_mediaFileManager = mediaFileManager;
 		}
 
 		public void Configure(string? name, BackOfficeExternalLoginProviderOptions options)
@@ -64,6 +76,10 @@ namespace Umbraco.Community.AzureSSO
 					{
 						SetGroups(autoLoginUser, loginInfo);
 						SetName(autoLoginUser, loginInfo);
+						if (_settings.SyncUserAvatar)
+						{
+							SetUserAvatar(autoLoginUser, loginInfo);
+						}
 					}
 				},
 				OnExternalLogin = (user, loginInfo) =>
@@ -73,6 +89,11 @@ namespace Umbraco.Community.AzureSSO
 						SetGroups(user, loginInfo);
 					}
 					SetName(user, loginInfo);
+
+					if (_settings.SyncUserAvatar)
+					{
+						SetUserAvatar(user, loginInfo);
+					}
 
 					return true; //returns a boolean indicating if sign in should continue or not.
 				}
@@ -118,6 +139,38 @@ namespace Umbraco.Community.AzureSSO
 				user.UserName = loginInfo.Principal.Identity.Name;
 			}
 			user.IsApproved = true;
+		}
+
+		private void SetUserAvatar(BackOfficeIdentityUser user, ExternalLoginInfo loginInfo)
+		{
+			if (loginInfo.AuthenticationTokens?.FirstOrDefault(t => t.Name.Equals("access_token"))?.Value is string accessToken)
+			{
+				using (var httpClient = new HttpClient())
+				{
+					httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+					var pictureResult = httpClient.GetAsync($"{_settings.MicrosoftGraphEndpoint}/v1.0/me/photo/$value").Result;
+
+					if (pictureResult.IsSuccessStatusCode)
+					{
+						if (_userService.GetByUsername(user.UserName) is User u && pictureResult.Headers.ETag is EntityTagHeaderValue etag)
+						{
+							//etag : identifier for a specific version of a resource
+							u.Avatar = $"UserAvatars/{etag.ToString().GenerateHash<SHA1>()}.jpg";
+
+							if (u.IsDirty())
+							{
+								using (var fs = pictureResult.Content.ReadAsStream())
+								{
+									_mediaFileManager.FileSystem.AddFile(u.Avatar, fs, true);
+								}
+
+								_userService.Save(u);
+							}
+						}
+					}
+
+				}
+			}
 		}
 
 		private string DisplayName(ClaimsPrincipal claimsPrincipal, string defaultValue)
